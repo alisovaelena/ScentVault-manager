@@ -12,6 +12,7 @@ import {
   Upload,
   Link as LinkIcon,
   Check,
+  X,
   ReceiptRussianRuble,
   Users,
   ArrowRight,
@@ -57,6 +58,9 @@ const App: React.FC = () => {
   const [cloudSession, setCloudSession] = useState<Session | null>(null);
   const [cloudState, setCloudState] = useState<CloudState>('idle');
   const [showCloudLogin, setShowCloudLogin] = useState(false);
+  const [showCloudMenu, setShowCloudMenu] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [cloudErrorMsg, setCloudErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   // Guards the save effect so it never overwrites stored data with the empty
@@ -137,7 +141,41 @@ const App: React.FC = () => {
   const pushNow = async () => {
     setCloudState('syncing');
     const res = await cloudSave({ data: dataRef.current, updatedAt: Date.now() });
-    setCloudState(res.error ? 'error' : 'synced');
+    if (res.error) { setCloudState('error'); setCloudErrorMsg(res.error); }
+    else { setCloudState('synced'); setCloudErrorMsg(''); setLastSyncAt(Date.now()); }
+  };
+
+  // Manual sync: replace THIS device's data with the cloud copy.
+  const forcePull = async () => {
+    if (!window.confirm('Забрать данные из облака?\n\nБаза на ЭТОМ устройстве будет заменена облачной копией.')) return;
+    setCloudState('syncing');
+    try {
+      const doc = await cloudLoad();
+      if (!doc) { alert('В облаке пока нет данных.'); setCloudState('idle'); return; }
+      applyingCloud.current = true;
+      setPerfumes(doc.data.perfumes || []);
+      setVials(doc.data.vials || []);
+      setSales(doc.data.sales || []);
+      setExpenses(doc.data.expenses || []);
+      setIncomes(doc.data.incomes || []);
+      setClientsData(doc.data.clientsData || []);
+      pullDone.current = true;
+      setCloudState('synced');
+      setCloudErrorMsg('');
+      setLastSyncAt(Date.now());
+      setShowCloudMenu(false);
+    } catch (e) {
+      setCloudState('error');
+      setCloudErrorMsg(String(e));
+    }
+  };
+
+  // Manual sync: replace the cloud copy with THIS device's data.
+  const forcePush = async () => {
+    if (!window.confirm('Отправить данные в облако?\n\nОблачная копия будет заменена базой с этого устройства.')) return;
+    pullDone.current = true;
+    await pushNow();
+    setShowCloudMenu(false);
   };
 
   // Initial pull after sign-in: newer side wins (whole-document, single owner).
@@ -165,13 +203,16 @@ const App: React.FC = () => {
           setClientsData(doc.data.clientsData || []);
           pullDone.current = true;
           setCloudState('synced');
+          setCloudErrorMsg('');
+          setLastSyncAt(Date.now());
         } else {
           pullDone.current = true;
           await pushNow();
         }
-      } catch {
+      } catch (e) {
         pullDone.current = true;
         setCloudState('error');
+        setCloudErrorMsg(String(e));
       }
     })();
   }, [cloudSession]);
@@ -294,7 +335,11 @@ const App: React.FC = () => {
 
   const goTo = (v: View) => { setView(v); setShowMobileMenu(false); };
 
-  const cloudLabel = cloudState === 'syncing' ? 'Синхронизация…' : cloudState === 'synced' ? 'Облако: сохранено' : cloudState === 'error' ? 'Ошибка облака' : 'Облако';
+  const syncTime = lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : null;
+  const cloudLabel = cloudState === 'syncing' ? 'Синхронизация…'
+    : cloudState === 'error' ? 'Ошибка облака'
+    : cloudState === 'synced' ? (syncTime ? `Облако · ${syncTime}` : 'Облако: сохранено')
+    : 'Облако';
   const cloudColor = cloudState === 'error' ? 'text-rose-500' : cloudState === 'synced' ? 'text-emerald-600' : 'text-neutral-500';
 
   const statsFallback = (
@@ -327,10 +372,9 @@ const App: React.FC = () => {
         <div className="mt-auto p-6 border-t border-neutral-100 space-y-2 shrink-0">
           {isCloudConfigured && (
             cloudSession ? (
-              <div className="flex items-center justify-between px-4 py-2.5 text-sm rounded-xl bg-neutral-50">
+              <button onClick={() => setShowCloudMenu(true)} className="w-full flex items-center justify-between px-4 py-2.5 text-sm rounded-xl bg-neutral-50 hover:bg-neutral-100 transition-all" title="Меню облака">
                 <span className={`flex items-center gap-2 font-medium ${cloudColor}`}><Cloud size={16} /> {cloudLabel}</span>
-                <button onClick={() => cloudSignOut()} title="Выйти из облака" className="p-1 text-neutral-300 hover:text-neutral-500"><LogOut size={14} /></button>
-              </div>
+              </button>
             ) : (
               <button onClick={() => setShowCloudLogin(true)} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 rounded-xl transition-all"><CloudOff size={16} /> Войти в облако</button>
             )
@@ -500,15 +544,43 @@ const App: React.FC = () => {
               </button>
               {isCloudConfigured && (
                 cloudSession ? (
-                  <button onClick={() => cloudSignOut()} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 ${cloudColor}`}>
-                    <Cloud size={22} /><span className="text-xs font-bold">{cloudState === 'error' ? 'Ошибка' : 'Облако ✓'}</span>
+                  <button onClick={() => { setShowCloudMenu(true); setShowMobileMenu(false); }} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 ${cloudColor}`}>
+                    <Cloud size={22} /><span className="text-xs font-bold">{cloudState === 'error' ? 'Ошибка' : syncTime ? `Облако · ${syncTime}` : 'Облако ✓'}</span>
                   </button>
                 ) : (
                   <button onClick={() => { setShowCloudLogin(true); setShowMobileMenu(false); }} className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 text-neutral-500">
-                    <CloudOff size={22} /><span className="text-xs font-bold">Облако</span>
+                    <CloudOff size={22} /><span className="text-xs font-bold">Войти в облако</span>
                   </button>
                 )
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloud menu: status + manual sync controls */}
+      {showCloudMenu && cloudSession && (
+        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowCloudMenu(false)}>
+          <div className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in duration-300" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-neutral-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Cloud size={20} className="text-indigo-600" /> Облако</h2>
+              <button onClick={() => setShowCloudMenu(false)} className="p-2 text-neutral-400 hover:bg-neutral-100 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-neutral-50 rounded-2xl p-4 space-y-1 text-sm">
+                <p className="text-neutral-500">Вход: <span className="font-bold text-neutral-800">{cloudSession.user.email}</span></p>
+                <p className="text-neutral-500">Последняя синхронизация: <span className="font-bold text-neutral-800">{syncTime || 'ещё не было'}</span></p>
+                {cloudErrorMsg && <p className="text-rose-600 font-medium break-words">Ошибка: {cloudErrorMsg}</p>}
+              </div>
+              <button onClick={forcePull} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 transition-all">
+                <Download size={18} /> Забрать из облака
+              </button>
+              <button onClick={forcePush} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg transition-all">
+                <Upload size={18} /> Отправить в облако
+              </button>
+              <button onClick={() => { if (window.confirm('Выйти из облака на этом устройстве? Данные останутся, но синхронизация остановится.')) { cloudSignOut(); setShowCloudMenu(false); } }} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-neutral-400 font-bold hover:bg-neutral-50 transition-all">
+                <LogOut size={16} /> Выйти из облака
+              </button>
             </div>
           </div>
         </div>
