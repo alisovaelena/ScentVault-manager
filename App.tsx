@@ -206,8 +206,14 @@ const App: React.FC = () => {
           setCloudErrorMsg('');
           setLastSyncAt(Date.now());
         } else {
+          // Local looks newer (or cloud is empty-ish). Do NOT auto-push on mere
+          // page open: a device with stale data but a skewed/late timestamp used
+          // to silently overwrite the cloud here. Upload happens only when the
+          // user actually changes data (debounced push) or via the manual
+          // "Отправить в облако" button.
           pullDone.current = true;
-          await pushNow();
+          if (!doc || cloudEmpty) { await pushNow(); } // cloud has nothing valuable — safe to seed it
+          else setCloudState('synced');
         }
       } catch (e) {
         pullDone.current = true;
