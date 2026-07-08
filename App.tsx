@@ -623,6 +623,7 @@ const App: React.FC = () => {
               <div className="bg-neutral-50 rounded-2xl p-4 space-y-1 text-sm">
                 <p className="text-neutral-500">Вход: <span className="font-bold text-neutral-800">{cloudSession.user.email}</span></p>
                 <p className="text-neutral-500">Последняя синхронизация: <span className="font-bold text-neutral-800">{syncTime || 'ещё не было'}</span></p>
+                <p className="text-neutral-500">Версия приложения: <span className="font-bold text-neutral-800">{__BUILD_ID__}</span></p>
                 {cloudErrorMsg && <p className="text-rose-600 font-medium break-words">Ошибка: {cloudErrorMsg}</p>}
               </div>
               <button onClick={forcePull} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 transition-all">
