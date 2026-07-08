@@ -36,7 +36,7 @@ import Clients from './components/Clients';
 import CloudLoginModal from './components/CloudLoginModal';
 import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder } from './utils/backup';
 import { exportToExcel } from './utils/excel';
-import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave } from './utils/cloud';
+import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, CloudDoc } from './utils/cloud';
 
 // Recharts is heavy — load the analytics screen only when it is opened.
 const Stats = React.lazy(() => import('./components/Stats'));
@@ -71,6 +71,7 @@ const App: React.FC = () => {
   const pulledRef = useRef(false);       // initial pull done for this session
   const pullDone = useRef(false);        // pushes are allowed only after the pull
   const applyingCloud = useRef(false);   // suppress the echo-push right after applying cloud data
+  const skipDirty = useRef(false);       // the next save stores CLOUD data — it is not a local edit
 
   // Always-fresh snapshot of the vault for async consumers (export, cloud push).
   const dataRef = useRef<BackupData>({ perfumes: [], vials: [], sales: [], expenses: [], incomes: [], clientsData: [] });
@@ -125,8 +126,11 @@ const App: React.FC = () => {
     localStorage.setItem('sv_incomes', JSON.stringify(incomes));
     localStorage.setItem('sv_clients_data', JSON.stringify(clientsData));
     localStorage.setItem('sv_updated_at', String(Date.now()));
-    // "There are local changes not yet uploaded" — cleared after a successful push.
-    localStorage.setItem('sv_dirty', '1');
+    // "There are local changes not yet uploaded" — cleared after a successful
+    // push. Data that just ARRIVED from the cloud is not a local edit: marking
+    // it dirty made devices bounce their stale copy back into the cloud.
+    if (skipDirty.current) { skipDirty.current = false; localStorage.setItem('sv_dirty', '0'); }
+    else localStorage.setItem('sv_dirty', '1');
   }, [perfumes, vials, sales, expenses, incomes, clientsData]);
 
   // --- Cloud sync (active only when Supabase env vars are configured) -------
@@ -142,14 +146,37 @@ const App: React.FC = () => {
 
   const pushNow = async () => {
     setCloudState('syncing');
-    const res = await cloudSave({ data: dataRef.current, updatedAt: Date.now() });
+    const ts = Date.now();
+    const res = await cloudSave({ data: dataRef.current, updatedAt: ts });
     if (res.error) { setCloudState('error'); setCloudErrorMsg(res.error); }
     else {
       setCloudState('synced');
       setCloudErrorMsg('');
       setLastSyncAt(Date.now());
       localStorage.setItem('sv_dirty', '0');
+      // Remember which cloud version this device now corresponds to. The value
+      // is used ONLY as an identifier (equality check), never compared as time,
+      // so device clock differences cannot corrupt sync decisions.
+      localStorage.setItem('sv_cloud_seen', String(ts));
     }
+  };
+
+  // Applies a cloud document to this device (shared by auto-sync and the
+  // manual "Забрать из облака" button).
+  const applyCloudDoc = (doc: CloudDoc) => {
+    applyingCloud.current = true; // no echo-push
+    skipDirty.current = true;     // arriving cloud data is not a local edit
+    setPerfumes(doc.data.perfumes || []);
+    setVials(doc.data.vials || []);
+    setSales(doc.data.sales || []);
+    setExpenses(doc.data.expenses || []);
+    setIncomes(doc.data.incomes || []);
+    setClientsData(doc.data.clientsData || []);
+    localStorage.setItem('sv_cloud_seen', String(doc.updatedAt));
+    pullDone.current = true;
+    setCloudState('synced');
+    setCloudErrorMsg('');
+    setLastSyncAt(Date.now());
   };
 
   // Manual sync: replace THIS device's data with the cloud copy.
@@ -170,17 +197,7 @@ const App: React.FC = () => {
         return;
       }
       const doc = res.doc;
-      applyingCloud.current = true;
-      setPerfumes(doc.data.perfumes || []);
-      setVials(doc.data.vials || []);
-      setSales(doc.data.sales || []);
-      setExpenses(doc.data.expenses || []);
-      setIncomes(doc.data.incomes || []);
-      setClientsData(doc.data.clientsData || []);
-      pullDone.current = true;
-      setCloudState('synced');
-      setCloudErrorMsg('');
-      setLastSyncAt(Date.now());
+      applyCloudDoc(doc);
       setShowCloudMenu(false);
       // Control readout so it is obvious WHAT arrived from the cloud.
       alert(`Получено из облака:\n• ароматов: ${doc.data.perfumes?.length || 0}\n• продаж: ${doc.data.sales?.length || 0}\n\nОблачная копия от ${new Date(doc.updatedAt).toLocaleString('ru-RU')}`);
@@ -215,34 +232,39 @@ const App: React.FC = () => {
           return;
         }
         const doc = res.doc;
-        const localUpdated = Number(localStorage.getItem('sv_updated_at') || 0);
-        // Reconciliation rules. Timestamps alone are NOT trusted when one side
-        // is empty: an empty side must never win over a full one, otherwise a
-        // fresh device (or a stray test row) could wipe the real base.
+        // Reconciliation WITHOUT clock comparisons. Device clocks differ, so
+        // "who is newer" by timestamp is unreliable (it made a phone bounce its
+        // stale base into the cloud for days). Instead each device remembers
+        // the IDENTIFIER of the cloud version it saw last (sv_cloud_seen):
+        //   cloud id changed  -> someone else updated the cloud -> take it;
+        //   cloud id same     -> cloud untouched; upload if we have edits.
         const cloudEmpty = !doc || ((doc.data.perfumes?.length || 0) === 0 && (doc.data.sales?.length || 0) === 0);
         const localEmpty = dataRef.current.perfumes.length === 0 && dataRef.current.sales.length === 0;
-        const applyCloud = doc && !cloudEmpty && (localEmpty || doc.updatedAt > localUpdated);
-        if (applyCloud && doc) {
-          applyingCloud.current = true;
-          setPerfumes(doc.data.perfumes || []);
-          setVials(doc.data.vials || []);
-          setSales(doc.data.sales || []);
-          setExpenses(doc.data.expenses || []);
-          setIncomes(doc.data.incomes || []);
-          setClientsData(doc.data.clientsData || []);
-          pullDone.current = true;
+        const seen = localStorage.getItem('sv_cloud_seen');
+        const dirty = localStorage.getItem('sv_dirty') === '1';
+        pullDone.current = true;
+
+        if (!doc || cloudEmpty) {
+          // Cloud holds nothing valuable — seed it with the local base if any.
+          if (!localEmpty) await pushNow();
+          else setCloudState('synced');
+        } else if (localEmpty) {
+          // Fresh device — always take the cloud.
+          applyCloudDoc(doc);
+        } else if (seen === null) {
+          // First run of this sync scheme on a device that already has data:
+          // provenance unknown, so no automatic action. One manual
+          // «Отправить/Забрать» from the cloud menu links the device in.
           setCloudState('synced');
-          setCloudErrorMsg('');
-          setLastSyncAt(Date.now());
+        } else if (String(doc.updatedAt) !== seen) {
+          // The cloud moved on since this device last synced.
+          applyCloudDoc(doc);
+          if (dirty) {
+            alert('Облако обновилось с другого устройства.\nНеотправленные правки на этом устройстве заменены облачной копией.');
+          }
         } else {
-          // Local looks newer (or cloud is empty-ish). Push on open ONLY when
-          // there are pending local edits that never made it to the cloud
-          // (sv_dirty) — e.g. the tab was closed before the debounced upload
-          // fired. A device that merely OPENED the app never overwrites the
-          // cloud (that used to let stale devices clobber fresh data).
-          pullDone.current = true;
-          const dirty = localStorage.getItem('sv_dirty') === '1';
-          if (!doc || cloudEmpty || (dirty && !localEmpty)) { await pushNow(); }
+          // Cloud unchanged since our last sync — upload pending edits if any.
+          if (dirty) await pushNow();
           else setCloudState('synced');
         }
       } catch (e) {
