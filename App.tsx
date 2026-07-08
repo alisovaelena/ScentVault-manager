@@ -125,6 +125,8 @@ const App: React.FC = () => {
     localStorage.setItem('sv_incomes', JSON.stringify(incomes));
     localStorage.setItem('sv_clients_data', JSON.stringify(clientsData));
     localStorage.setItem('sv_updated_at', String(Date.now()));
+    // "There are local changes not yet uploaded" — cleared after a successful push.
+    localStorage.setItem('sv_dirty', '1');
   }, [perfumes, vials, sales, expenses, incomes, clientsData]);
 
   // --- Cloud sync (active only when Supabase env vars are configured) -------
@@ -142,7 +144,12 @@ const App: React.FC = () => {
     setCloudState('syncing');
     const res = await cloudSave({ data: dataRef.current, updatedAt: Date.now() });
     if (res.error) { setCloudState('error'); setCloudErrorMsg(res.error); }
-    else { setCloudState('synced'); setCloudErrorMsg(''); setLastSyncAt(Date.now()); }
+    else {
+      setCloudState('synced');
+      setCloudErrorMsg('');
+      setLastSyncAt(Date.now());
+      localStorage.setItem('sv_dirty', '0');
+    }
   };
 
   // Manual sync: replace THIS device's data with the cloud copy.
@@ -206,13 +213,14 @@ const App: React.FC = () => {
           setCloudErrorMsg('');
           setLastSyncAt(Date.now());
         } else {
-          // Local looks newer (or cloud is empty-ish). Do NOT auto-push on mere
-          // page open: a device with stale data but a skewed/late timestamp used
-          // to silently overwrite the cloud here. Upload happens only when the
-          // user actually changes data (debounced push) or via the manual
-          // "Отправить в облако" button.
+          // Local looks newer (or cloud is empty-ish). Push on open ONLY when
+          // there are pending local edits that never made it to the cloud
+          // (sv_dirty) — e.g. the tab was closed before the debounced upload
+          // fired. A device that merely OPENED the app never overwrites the
+          // cloud (that used to let stale devices clobber fresh data).
           pullDone.current = true;
-          if (!doc || cloudEmpty) { await pushNow(); } // cloud has nothing valuable — safe to seed it
+          const dirty = localStorage.getItem('sv_dirty') === '1';
+          if (!doc || cloudEmpty || (dirty && !localEmpty)) { await pushNow(); }
           else setCloudState('synced');
         }
       } catch (e) {
@@ -228,9 +236,26 @@ const App: React.FC = () => {
     if (!cloudSession || !pullDone.current) return;
     if (applyingCloud.current) { applyingCloud.current = false; return; }
     setCloudState('syncing');
-    const t = setTimeout(pushNow, 2000);
+    const t = setTimeout(pushNow, 800);
     return () => clearTimeout(t);
   }, [perfumes, vials, sales, expenses, incomes, clientsData, cloudSession]);
+
+  // Keep the freshest session in a ref for the visibility flush below.
+  const cloudSessionRef = useRef<Session | null>(null);
+  useEffect(() => { cloudSessionRef.current = cloudSession; }, [cloudSession]);
+
+  // Flush pending changes when the tab is closed or goes to background —
+  // otherwise an edit made right before closing never reaches the cloud.
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (!cloudSessionRef.current || !pullDone.current) return;
+      if (localStorage.getItem('sv_dirty') !== '1') return;
+      pushNow(); // best-effort: usually completes before the tab is killed
+    };
+    document.addEventListener('visibilitychange', flush);
+    return () => document.removeEventListener('visibilitychange', flush);
+  }, []);
 
   // ---------------------------------------------------------------------------
 
