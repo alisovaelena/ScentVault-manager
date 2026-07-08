@@ -87,22 +87,21 @@ export async function cloudLoad(): Promise<CloudLoadResult> {
   const userId = sess.session?.user.id;
   if (!token || !userId) return { doc: null, error: 'сессия истекла — выйдите из облака и войдите заново' };
   try {
-    // Plain fetch with cache:'no-store' — iOS (especially installed PWAs)
-    // aggressively caches GET responses and can keep returning a stale cloud
-    // copy through the regular client. This forces a real network read.
-    const resp = await fetch(`${url}/rest/v1/vault?select=doc,updated_at&user_id=eq.${userId}`, {
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${token}`,
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-      },
-      cache: 'no-store',
-    });
-    if (!resp.ok) return { doc: null, error: `сервер ответил кодом ${resp.status}` };
-    const rows = await resp.json();
-    if (!Array.isArray(rows) || rows.length === 0) return { doc: null }; // записи для этого пользователя нет
-    return { doc: { data: rows[0].doc as BackupData, updatedAt: Number(rows[0].updated_at) } };
+    // Cache-buster: iOS (especially installed PWAs) aggressively caches GET
+    // responses and can keep returning a stale cloud copy. An extra filter
+    // that is ALWAYS true but changes on every call makes each request URL
+    // unique, so the HTTP cache can never answer it. updated_at is an epoch
+    // in ms (~1.7e12), while the buster stays below 86 400 000.
+    const buster = Date.now() % 86400000;
+    const { data, error } = await c
+      .from('vault')
+      .select('doc, updated_at')
+      .eq('user_id', userId)
+      .gte('updated_at', buster)
+      .maybeSingle();
+    if (error) return { doc: null, error: error.message };
+    if (!data) return { doc: null }; // записи для этого пользователя нет
+    return { doc: { data: data.doc as BackupData, updatedAt: Number(data.updated_at) } };
   } catch {
     return { doc: null, error: 'нет связи с сервером' };
   }
