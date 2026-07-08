@@ -157,8 +157,19 @@ const App: React.FC = () => {
     if (!window.confirm('Забрать данные из облака?\n\nБаза на ЭТОМ устройстве будет заменена облачной копией.')) return;
     setCloudState('syncing');
     try {
-      const doc = await cloudLoad();
-      if (!doc) { alert('В облаке пока нет данных.'); setCloudState('idle'); return; }
+      const res = await cloudLoad();
+      if (res.error) {
+        setCloudState('error');
+        setCloudErrorMsg(res.error);
+        alert(`Не удалось прочитать облако:\n${res.error}`);
+        return;
+      }
+      if (!res.doc) {
+        alert('В облаке нет записи для этого пользователя.\nВозможно, вход выполнен под другим email.');
+        setCloudState('idle');
+        return;
+      }
+      const doc = res.doc;
       applyingCloud.current = true;
       setPerfumes(doc.data.perfumes || []);
       setVials(doc.data.vials || []);
@@ -194,7 +205,16 @@ const App: React.FC = () => {
     (async () => {
       setCloudState('syncing');
       try {
-        const doc = await cloudLoad();
+        const res = await cloudLoad();
+        if (res.error) {
+          // Read failed (network, expired session…) — do NOT touch anything,
+          // especially do not push over a cloud we could not even read.
+          pullDone.current = true;
+          setCloudState('error');
+          setCloudErrorMsg(res.error);
+          return;
+        }
+        const doc = res.doc;
         const localUpdated = Number(localStorage.getItem('sv_updated_at') || 0);
         // Reconciliation rules. Timestamps alone are NOT trusted when one side
         // is empty: an empty side must never win over a full one, otherwise a

@@ -74,13 +74,18 @@ export async function cloudSignOut(): Promise<void> {
   await getClient()?.auth.signOut();
 }
 
-export async function cloudLoad(): Promise<CloudDoc | null> {
+export interface CloudLoadResult {
+  doc: CloudDoc | null;
+  error?: string; // human-readable reason when the read itself failed
+}
+
+export async function cloudLoad(): Promise<CloudLoadResult> {
   const c = getClient();
-  if (!c || !url || !anonKey) return null;
+  if (!c || !url || !anonKey) return { doc: null, error: 'облако не настроено' };
   const { data: sess } = await c.auth.getSession();
   const token = sess.session?.access_token;
   const userId = sess.session?.user.id;
-  if (!token || !userId) return null;
+  if (!token || !userId) return { doc: null, error: 'сессия истекла — выйдите из облака и войдите заново' };
   try {
     // Plain fetch with cache:'no-store' — iOS (especially installed PWAs)
     // aggressively caches GET responses and can keep returning a stale cloud
@@ -94,12 +99,12 @@ export async function cloudLoad(): Promise<CloudDoc | null> {
       },
       cache: 'no-store',
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) return { doc: null, error: `сервер ответил кодом ${resp.status}` };
     const rows = await resp.json();
-    if (!Array.isArray(rows) || rows.length === 0) return null;
-    return { data: rows[0].doc as BackupData, updatedAt: Number(rows[0].updated_at) };
+    if (!Array.isArray(rows) || rows.length === 0) return { doc: null }; // записи для этого пользователя нет
+    return { doc: { data: rows[0].doc as BackupData, updatedAt: Number(rows[0].updated_at) } };
   } catch {
-    return null;
+    return { doc: null, error: 'нет связи с сервером' };
   }
 }
 
