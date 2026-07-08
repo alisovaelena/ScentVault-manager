@@ -171,6 +171,8 @@ const App: React.FC = () => {
       setCloudErrorMsg('');
       setLastSyncAt(Date.now());
       setShowCloudMenu(false);
+      // Control readout so it is obvious WHAT arrived from the cloud.
+      alert(`Получено из облака:\n• ароматов: ${doc.data.perfumes?.length || 0}\n• продаж: ${doc.data.sales?.length || 0}\n\nОблачная копия от ${new Date(doc.updatedAt).toLocaleString('ru-RU')}`);
     } catch (e) {
       setCloudState('error');
       setCloudErrorMsg(String(e));

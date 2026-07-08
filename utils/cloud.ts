@@ -76,13 +76,31 @@ export async function cloudSignOut(): Promise<void> {
 
 export async function cloudLoad(): Promise<CloudDoc | null> {
   const c = getClient();
-  if (!c) return null;
+  if (!c || !url || !anonKey) return null;
   const { data: sess } = await c.auth.getSession();
+  const token = sess.session?.access_token;
   const userId = sess.session?.user.id;
-  if (!userId) return null;
-  const { data, error } = await c.from('vault').select('doc, updated_at').eq('user_id', userId).maybeSingle();
-  if (error || !data) return null;
-  return { data: data.doc as BackupData, updatedAt: Number(data.updated_at) };
+  if (!token || !userId) return null;
+  try {
+    // Plain fetch with cache:'no-store' — iOS (especially installed PWAs)
+    // aggressively caches GET responses and can keep returning a stale cloud
+    // copy through the regular client. This forces a real network read.
+    const resp = await fetch(`${url}/rest/v1/vault?select=doc,updated_at&user_id=eq.${userId}`, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${token}`,
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      cache: 'no-store',
+    });
+    if (!resp.ok) return null;
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    return { data: rows[0].doc as BackupData, updatedAt: Number(rows[0].updated_at) };
+  } catch {
+    return null;
+  }
 }
 
 export async function cloudSave(doc: CloudDoc): Promise<{ error?: string }> {
