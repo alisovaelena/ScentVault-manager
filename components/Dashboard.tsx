@@ -124,8 +124,8 @@ const Dashboard: React.FC<DashboardProps> = ({ perfumes, vials, sales, onViewCha
                           <p className="text-[10px] text-neutral-400">{new Date(sale.date).toLocaleDateString('ru-RU')}</p>
                         </td>
                         <td className="py-4">
-                          <p className="text-xs text-neutral-600 truncate max-w-[260px]">{getSaleSummary(sale, perfumes)}</p>
-                          <p className="text-[10px] text-neutral-400">{getSaleItems(sale).length} поз., {firstItem?.volumeMl || 0}мл первая</p>
+                          <p className="text-xs text-neutral-600 truncate max-w-[260px]">{getSaleSummary(sale, perfumes, vials)}</p>
+                          <p className="text-[10px] text-neutral-400">{getSaleItems(sale).length} поз.{firstItem?.volumeMl ? `, ${firstItem.volumeMl}мл первая` : ''}</p>
                         </td>
                         <td className="py-4 font-bold text-right text-indigo-600">{getSaleTotal(sale)} ₽</td>
                       </tr>

@@ -152,7 +152,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
   const processedSales = useMemo(() => {
     const query = searchQuery.toLowerCase();
     let result = sales.filter(sale => {
-      const summary = getSaleSummary(sale, perfumes).toLowerCase();
+      const summary = getSaleSummary(sale, perfumes, vials).toLowerCase();
       const matchesSearch =
         sale.customerName.toLowerCase().includes(query) ||
         (sale.customerPhone || sale.customerContact || '').toLowerCase().includes(query) ||
@@ -175,7 +175,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
         case 'date': comp = a.date - b.date; break;
         case 'customer': comp = a.customerName.localeCompare(b.customerName); break;
         case 'price': comp = getSaleTotal(a) - getSaleTotal(b); break;
-        case 'perfume': comp = getSaleSummary(a, perfumes).localeCompare(getSaleSummary(b, perfumes)); break;
+        case 'perfume': comp = getSaleSummary(a, perfumes, vials).localeCompare(getSaleSummary(b, perfumes, vials)); break;
       }
       return sortDirection === 'asc' ? comp : -comp;
     });
@@ -229,12 +229,19 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
     }));
   };
 
+  // A filled line is either perfume+volume, or a vial-only sale (empty atomizer).
+  const isFilledItem = (item: SaleItem) =>
+    (item.perfumeId && item.volumeMl > 0) || (!item.perfumeId && item.vialId);
+
   const validateForm = () => {
-    const filledItems = formData.items.filter(item => item.perfumeId && item.volumeMl > 0);
+    const filledItems = formData.items.filter(isFilledItem);
     if (!formData.customerName.trim()) return 'Укажите имя клиента.';
     if (!filledItems.length) return 'Добавьте хотя бы одну позицию заказа.';
+    if (formData.items.some(item => item.perfumeId && item.volumeMl <= 0)) {
+      return 'У одного из ароматов не указан объём (мл).';
+    }
 
-    for (const item of filledItems) {
+    for (const item of filledItems.filter(i => i.perfumeId)) {
       const perfume = perfumes.find(p => p.id === item.perfumeId);
       if (!perfume) return 'Один из ароматов не найден.';
       const returnedVolume = editingSale ? getSaleItems(editingSale).filter(old => old.perfumeId === item.perfumeId).reduce((sum, old) => sum + old.volumeMl, 0) : 0;
@@ -285,7 +292,10 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
     const error = validateForm();
     if (error) { setFormError(error); return; }
 
-    const items = formData.items.filter(item => item.perfumeId && item.volumeMl > 0).map(recalculateItem);
+    const items = formData.items
+      .filter(isFilledItem)
+      // Vial-only lines carry no liquid — store volume 0, whatever the field said.
+      .map(item => recalculateItem(item.perfumeId ? item : { ...item, volumeMl: 0 }));
     if (editingSale) {
       changeInventory(getSaleItems(editingSale), 1);
       changeInventory(items, -1);
@@ -384,7 +394,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                       {(sale.customerPhone || sale.customerContact) && <p className="text-[10px] text-neutral-400 flex items-center gap-1 mt-1"><Phone size={10} />{sale.customerPhone || sale.customerContact}</p>}
                     </td>
                     <td className="px-6 py-4">
-                      <p className="font-medium text-neutral-800 truncate max-w-[320px]">{getSaleSummary(sale, perfumes)}</p>
+                      <p className="font-medium text-neutral-800 truncate max-w-[320px]">{getSaleSummary(sale, perfumes, vials)}</p>
                       {giftCount > 0 && <p className="text-[10px] text-pink-500 font-black uppercase mt-1">{giftCount} подарок</p>}
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -459,14 +469,16 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                         <input type="number" min={0.1} step={0.1} value={item.volumeMl} onChange={e => updateItem(item.id, { volumeMl: +e.target.value })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none" placeholder="мл" />
                         <select value={item.vialId || ''} onChange={e => updateItem(item.id, { vialId: e.target.value })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none">
                           <option value="">Без флакона</option>
-                          {vials.map(v => <option key={v.id} value={v.id}>{v.name} ({v.stockQuantity} шт)</option>)}
+                          {[...vials]
+                            .sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.sizeMl - b.sizeMl)
+                            .map(v => <option key={v.id} value={v.id}>{v.name} · {v.sizeMl} мл ({v.stockQuantity} шт)</option>)}
                         </select>
                         <button type="button" onClick={() => updateItem(item.id, { isGift: !item.isGift })} className={`px-4 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 border transition-all ${item.isGift ? 'bg-pink-500 border-pink-500 text-white' : 'bg-white border-neutral-200 text-neutral-500'}`}>
                           <Gift size={16} /> Подарок
                         </button>
                       </div>
                       <div className="flex justify-between text-sm font-bold px-1">
-                        <span className="text-neutral-400">{selectedPerfume ? `${selectedPerfume.retailPricePerMl} ₽/мл` : 'Цена появится после выбора'}</span>
+                        <span className="text-neutral-400">{selectedPerfume ? `${selectedPerfume.retailPricePerMl} ₽/мл` : item.vialId ? 'Только атомайзер, без парфюма' : 'Цена появится после выбора'}</span>
                         <span className={item.isGift ? 'text-pink-500' : 'text-indigo-600'}>{item.isGift ? '0 ₽' : `${item.price.toLocaleString()} ₽`}</span>
                       </div>
                     </div>

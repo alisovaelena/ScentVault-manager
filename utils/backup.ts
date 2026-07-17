@@ -71,7 +71,8 @@ export function validateBackup(raw: unknown): ValidationResult {
     if (!isObj(s) || !str(s.id) || !str(s.customerName)) { skipped++; return []; }
     const items: SaleItem[] | undefined = Array.isArray(s.items)
       ? s.items.flatMap((it: unknown) => {
-          if (!isObj(it) || !str(it.perfumeId)) { skipped++; return []; }
+          // A valid line references a perfume OR is a vial-only sale (empty atomizer).
+          if (!isObj(it) || (!str(it.perfumeId) && !str(it.vialId))) { skipped++; return []; }
           return [{
             id: str(it.id) || Math.random().toString(36).slice(2, 11),
             perfumeId: str(it.perfumeId),

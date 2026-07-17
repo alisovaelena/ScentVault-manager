@@ -35,9 +35,11 @@ const Stats: React.FC<StatsProps> = ({ perfumes, sales, vials, expenses, incomes
     const costs = getSaleItems(sale).reduce((sum, item) => {
       const perfume = perfumes.find(p => p.id === item.perfumeId);
       const vial = vials.find(v => v.id === item.vialId);
-      if (!perfume) return sum;
+      const vialCost = vial?.purchasePrice || 0;
+      // Vial-only line (empty atomizer): no liquid, but the vial itself has a cost.
+      if (!perfume) return sum + vialCost;
       const perfumeCostPerMl = perfume.purchasePrice / perfume.totalVolumeMl;
-      return sum + (perfumeCostPerMl * item.volumeMl) + (vial?.purchasePrice || 0);
+      return sum + (perfumeCostPerMl * item.volumeMl) + vialCost;
     }, 0);
 
     // Profit = revenue - cost of liquid & vials - shipping forwarded to the carrier.

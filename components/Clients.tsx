@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Users, ShoppingBag, Calendar, X, Gift, Phone, MapPin, StickyNote, Edit3, Check, Copy, Truck, Package, LayoutGrid, List, ArrowUpDown } from 'lucide-react';
-import { Sale, Perfume, ClientData } from '../types';
+import { Sale, Perfume, Vial, ClientData } from '../types';
 import { getSaleGiftCount, getSaleItems, getSaleSummary, getSaleTotal } from '../utils/sales';
 
 interface ClientsProps {
   sales: Sale[];
   perfumes: Perfume[];
+  vials: Vial[];
   clientsData: ClientData[];
   setClientsData: React.Dispatch<React.SetStateAction<ClientData[]>>;
   searchQuery: string;
@@ -23,7 +24,7 @@ interface ClientSummary {
 
 type ClientSortOption = 'ltv' | 'name' | 'date' | 'orders';
 
-const Clients: React.FC<ClientsProps> = ({ sales, perfumes, clientsData, setClientsData, searchQuery }) => {
+const Clients: React.FC<ClientsProps> = ({ sales, perfumes, vials, clientsData, setClientsData, searchQuery }) => {
   const [selectedClient, setSelectedClient] = useState<ClientSummary | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<ClientSortOption>('ltv');
@@ -266,10 +267,18 @@ const Clients: React.FC<ClientsProps> = ({ sales, perfumes, clientsData, setClie
                         <div key={sale.id} className="p-5 rounded-2xl border border-neutral-100 bg-white transition-all">
                           <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
                             <div className="space-y-2 min-w-0">
-                              <p className="font-bold text-neutral-900">{getSaleSummary(sale, perfumes)}</p>
+                              <p className="font-bold text-neutral-900">{getSaleSummary(sale, perfumes, vials)}</p>
                               <div className="flex items-center gap-3 text-xs text-neutral-400 font-medium"><Calendar size={12} />{new Date(sale.date).toLocaleDateString('ru-RU')}</div>
                               <div className="flex flex-wrap gap-2">
                                 {getSaleItems(sale).map(item => {
+                                  if (!item.perfumeId) {
+                                    const vial = vials.find(v => v.id === item.vialId);
+                                    return (
+                                      <span key={item.id} className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase ${item.isGift ? 'bg-pink-50 text-pink-600' : 'bg-neutral-100 text-neutral-500'}`}>
+                                        Атомайзер {vial ? `${vial.name} ${vial.sizeMl} мл` : ''} {item.isGift && 'подарок'}
+                                      </span>
+                                    );
+                                  }
                                   const perfume = perfumes.find(p => p.id === item.perfumeId);
                                   return (
                                     <span key={item.id} className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase ${item.isGift ? 'bg-pink-50 text-pink-600' : 'bg-neutral-100 text-neutral-500'}`}>

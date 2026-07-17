@@ -554,7 +554,7 @@ const App: React.FC = () => {
           {view === 'vials' && <Vials vials={vials} setVials={setVials} searchQuery="" />}
           {view === 'expenses' && <Expenses expenses={expenses} setExpenses={setExpenses} searchQuery="" />}
           {view === 'incomes' && <Incomes incomes={incomes} setIncomes={setIncomes} searchQuery="" />}
-          {view === 'clients' && <Clients sales={sales} perfumes={perfumes} clientsData={clientsData} setClientsData={setClientsData} searchQuery="" />}
+          {view === 'clients' && <Clients sales={sales} perfumes={perfumes} vials={vials} clientsData={clientsData} setClientsData={setClientsData} searchQuery="" />}
           {view === 'sales' && <Sales sales={sales} setSales={setSales} perfumes={perfumes} setPerfumes={setPerfumes} vials={vials} setVials={setVials} clientsData={clientsData} searchQuery="" />}
           {view === 'stats' && (
             <Suspense fallback={statsFallback}>

@@ -1,4 +1,4 @@
-import { OrderStatus, Perfume, Sale, SaleItem } from '../types';
+import { OrderStatus, Perfume, Sale, SaleItem, Vial } from '../types';
 
 export const ORDER_STATUSES: { value: OrderStatus; label: string; badge: string }[] = [
   { value: 'paid', label: 'Оплачен', badge: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
@@ -36,11 +36,17 @@ export const getSaleTotal = (sale: Sale) =>
 export const getSaleGiftCount = (sale: Sale) =>
   getSaleItems(sale).filter(item => item.isGift).length;
 
-export const getSaleSummary = (sale: Sale, perfumes: Perfume[]) => {
+export const getSaleSummary = (sale: Sale, perfumes: Perfume[], vials?: Vial[]) => {
   const items = getSaleItems(sale);
   if (!items.length) return 'Без позиций';
 
   return items.map(item => {
+    // A line without a perfume is a sale of an empty atomizer (vial only).
+    if (!item.perfumeId) {
+      const vial = vials?.find(v => v.id === item.vialId);
+      const name = vial ? `Атомайзер ${vial.name} ${vial.sizeMl} мл` : 'Атомайзер';
+      return `${name}${item.isGift ? ' (подарок)' : ''}`;
+    }
     const perfume = perfumes.find(p => p.id === item.perfumeId);
     const name = perfume ? `${perfume.brand} ${perfume.name}` : 'Аромат удален';
     return `${name} ${item.volumeMl} мл${item.isGift ? ' (подарок)' : ''}`;

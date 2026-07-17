@@ -28,6 +28,11 @@ export async function exportToExcel(data: {
     const v = vials.find(vl => vl.id === id);
     return v ? `${v.name} ${v.sizeMl} мл` : 'Удалён';
   };
+  // A line without a perfume is a vial-only sale (empty atomizer).
+  const lineLabel = (it: { perfumeId: string; vialId?: string; volumeMl: number; isGift?: boolean }) =>
+    it.perfumeId
+      ? `${perfumeName(it.perfumeId)} ${it.volumeMl} мл${it.isGift ? ' (подарок)' : ''}`
+      : `Атомайзер ${vialName(it.vialId)}${it.isGift ? ' (подарок)' : ''}`;
 
   const sortedSales = [...sales].sort((a, b) => b.date - a.date);
 
@@ -35,7 +40,7 @@ export async function exportToExcel(data: {
     'Дата': fmtDate(s.date),
     'Клиент': s.customerName,
     'Телефон': s.customerPhone || s.customerContact || '',
-    'Состав': getSaleItems(s).map(it => `${perfumeName(it.perfumeId)} ${it.volumeMl} мл${it.isGift ? ' (подарок)' : ''}`).join('; '),
+    'Состав': getSaleItems(s).map(lineLabel).join('; '),
     'Статус': statusLabel(s),
     'Трек-номер': s.trackingNumber || '',
     'Сумма, ₽': getSaleTotal(s),
@@ -47,8 +52,8 @@ export async function exportToExcel(data: {
     getSaleItems(s).map(it => ({
       'Дата': fmtDate(s.date),
       'Клиент': s.customerName,
-      'Аромат': perfumeName(it.perfumeId),
-      'Объём, мл': it.volumeMl,
+      'Аромат': it.perfumeId ? perfumeName(it.perfumeId) : 'Атомайзер (пустой)',
+      'Объём, мл': it.perfumeId ? it.volumeMl : '',
       'Флакон': vialName(it.vialId),
       'Цена, ₽': it.price,
       'Подарок': it.isGift ? 'Да' : '',
