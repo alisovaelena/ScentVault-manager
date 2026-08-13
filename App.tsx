@@ -36,7 +36,7 @@ import Clients from './components/Clients';
 import CloudLoginModal from './components/CloudLoginModal';
 import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder } from './utils/backup';
 import { exportToExcel } from './utils/excel';
-import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, CloudDoc } from './utils/cloud';
+import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, cloudGetVersion, CloudDoc } from './utils/cloud';
 
 // Recharts is heavy — load the analytics screen only when it is opened.
 const Stats = React.lazy(() => import('./components/Stats'));
@@ -61,6 +61,9 @@ const App: React.FC = () => {
   const [showCloudMenu, setShowCloudMenu] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [cloudErrorMsg, setCloudErrorMsg] = useState('');
+  // Divergence between this device and the cloud that only the user can resolve.
+  const [conflictDoc, setConflictDoc] = useState<CloudDoc | null>(null);
+  const [showConflict, setShowConflict] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   // Guards the save effect so it never overwrites stored data with the empty
@@ -72,6 +75,8 @@ const App: React.FC = () => {
   const pullDone = useRef(false);        // pushes are allowed only after the pull
   const applyingCloud = useRef(false);   // suppress the echo-push right after applying cloud data
   const skipDirty = useRef(false);       // the next save stores CLOUD data — it is not a local edit
+  const syncBusy = useRef(false);        // one cloud operation at a time
+  const conflictOpen = useRef(false);    // pause background sync while the user decides
 
   // Always-fresh snapshot of the vault for async consumers (export, cloud push).
   const dataRef = useRef<BackupData>({ perfumes: [], vials: [], sales: [], expenses: [], incomes: [], clientsData: [] });
@@ -144,12 +149,32 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const pushNow = async () => {
+  // Raises the divergence dialog instead of letting one side silently win.
+  const raiseConflict = async (doc?: CloudDoc | null) => {
+    let d = doc ?? null;
+    if (!d) {
+      const r = await cloudLoad();
+      d = r.doc;
+    }
+    setConflictDoc(d);
+    conflictOpen.current = true;
+    setShowConflict(true);
+    setCloudState('error');
+    setCloudErrorMsg('данные разошлись с облаком — нужно выбрать версию');
+  };
+
+  const pushNow = async (force = false): Promise<boolean> => {
     setCloudState('syncing');
-    const ts = Date.now();
-    const res = await cloudSave({ data: dataRef.current, updatedAt: ts });
-    if (res.error) { setCloudState('error'); setCloudErrorMsg(res.error); }
-    else {
+    syncBusy.current = true;
+    try {
+      const ts = Date.now();
+      const seenRaw = localStorage.getItem('sv_cloud_seen');
+      const expected = seenRaw === null ? null : Number(seenRaw);
+      // Guarded write: the cloud accepts it only while it still holds the version
+      // this device last saw. A stale tab can no longer overwrite fresh data.
+      const res = await cloudSave({ data: dataRef.current, updatedAt: ts }, expected, force);
+      if (res.conflict) { await raiseConflict(); return false; }
+      if (res.error) { setCloudState('error'); setCloudErrorMsg(res.error); return false; }
       setCloudState('synced');
       setCloudErrorMsg('');
       setLastSyncAt(Date.now());
@@ -158,6 +183,9 @@ const App: React.FC = () => {
       // is used ONLY as an identifier (equality check), never compared as time,
       // so device clock differences cannot corrupt sync decisions.
       localStorage.setItem('sv_cloud_seen', String(ts));
+      return true;
+    } finally {
+      syncBusy.current = false;
     }
   };
 
@@ -207,12 +235,30 @@ const App: React.FC = () => {
     }
   };
 
-  // Manual sync: replace the cloud copy with THIS device's data.
+  // Manual sync: replace the cloud copy with THIS device's data (explicit choice).
   const forcePush = async () => {
     if (!window.confirm('Отправить данные в облако?\n\nОблачная копия будет заменена базой с этого устройства.')) return;
     pullDone.current = true;
-    await pushNow();
+    await pushNow(true);
     setShowCloudMenu(false);
+  };
+
+  // Divergence resolution — both options are explicit and irreversible, so the
+  // dialog states plainly what will be lost.
+  const resolveKeepCloud = async () => {
+    const doc = conflictDoc ?? (await cloudLoad()).doc;
+    if (!doc) { alert('Не удалось прочитать облако.'); return; }
+    applyCloudDoc(doc);
+    conflictOpen.current = false;
+    setShowConflict(false);
+    setConflictDoc(null);
+  };
+
+  const resolveKeepLocal = async () => {
+    conflictOpen.current = false;
+    setShowConflict(false);
+    setConflictDoc(null);
+    await pushNow(true);
   };
 
   // Initial pull after sign-in: newer side wins (whole-document, single owner).
@@ -258,10 +304,8 @@ const App: React.FC = () => {
           setCloudState('synced');
         } else if (String(doc.updatedAt) !== seen) {
           // The cloud moved on since this device last synced.
-          applyCloudDoc(doc);
-          if (dirty) {
-            alert('Облако обновилось с другого устройства.\nНеотправленные правки на этом устройстве заменены облачной копией.');
-          }
+          if (dirty) await raiseConflict(doc); // we also have unsent edits — the user decides
+          else applyCloudDoc(doc);
         } else {
           // Cloud unchanged since our last sync — upload pending edits if any.
           if (dirty) await pushNow();
@@ -277,10 +321,10 @@ const App: React.FC = () => {
 
   // Debounced push on every local change while signed in.
   useEffect(() => {
-    if (!cloudSession || !pullDone.current) return;
+    if (!cloudSession || !pullDone.current || conflictOpen.current) return;
     if (applyingCloud.current) { applyingCloud.current = false; return; }
     setCloudState('syncing');
-    const t = setTimeout(pushNow, 800);
+    const t = setTimeout(() => pushNow(), 800);
     return () => clearTimeout(t);
   }, [perfumes, vials, sales, expenses, incomes, clientsData, cloudSession]);
 
@@ -293,13 +337,48 @@ const App: React.FC = () => {
   useEffect(() => {
     const flush = () => {
       if (document.visibilityState !== 'hidden') return;
-      if (!cloudSessionRef.current || !pullDone.current) return;
+      if (!cloudSessionRef.current || !pullDone.current || conflictOpen.current) return;
       if (localStorage.getItem('sv_dirty') !== '1') return;
       pushNow(); // best-effort: usually completes before the tab is killed
     };
     document.addEventListener('visibilitychange', flush);
     return () => document.removeEventListener('visibilitychange', flush);
   }, []);
+
+  // Watch the cloud while the app is open. Without this a tab left open all day
+  // never learns that another device added anything — and used to overwrite it.
+  useEffect(() => {
+    if (!cloudSession) return;
+
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!cloudSessionRef.current || !pullDone.current) return;
+      if (syncBusy.current || conflictOpen.current) return;
+      syncBusy.current = true;
+      try {
+        const v = await cloudGetVersion();
+        if (v.error || v.version === null) return;
+        const seen = localStorage.getItem('sv_cloud_seen');
+        if (seen === null || String(v.version) === seen) return; // cloud unchanged
+        const r = await cloudLoad();
+        if (!r.doc) return;
+        if (localStorage.getItem('sv_dirty') === '1') await raiseConflict(r.doc);
+        else applyCloudDoc(r.doc); // no local edits — safe to take the newer copy
+      } finally {
+        syncBusy.current = false;
+      }
+    };
+
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    const id = window.setInterval(check, 20000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [cloudSession]);
 
   // ---------------------------------------------------------------------------
 
@@ -657,6 +736,47 @@ const App: React.FC = () => {
               <button onClick={() => { if (window.confirm('Выйти из облака на этом устройстве? Данные останутся, но синхронизация остановится.')) { cloudSignOut(); setShowCloudMenu(false); } }} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-neutral-400 font-bold hover:bg-neutral-50 transition-all">
                 <LogOut size={16} /> Выйти из облака
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Divergence: this device and the cloud both changed — the user picks. */}
+      {showConflict && (
+        <div className="fixed inset-0 bg-neutral-900/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+            <div className="p-6 border-b border-neutral-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><ShieldAlert size={20} /></div>
+              <h2 className="text-xl font-bold">Данные разошлись</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-neutral-600">
+                На другом устройстве база изменилась, а здесь есть правки, которые ещё не уехали в облако.
+                Выберите, какую версию оставить — вторая будет заменена.
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-neutral-50 rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-neutral-400 mb-1">Это устройство</p>
+                  <p className="font-bold text-neutral-800">{perfumes.length} ароматов</p>
+                  <p className="font-bold text-neutral-800">{sales.length} продаж</p>
+                </div>
+                <div className="bg-indigo-50/60 rounded-2xl p-4">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-indigo-400 mb-1">В облаке</p>
+                  <p className="font-bold text-neutral-800">{conflictDoc ? (conflictDoc.data.perfumes?.length || 0) : '—'} ароматов</p>
+                  <p className="font-bold text-neutral-800">{conflictDoc ? (conflictDoc.data.sales?.length || 0) : '—'} продаж</p>
+                </div>
+              </div>
+              <button onClick={exportData} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-neutral-200 text-neutral-500 font-bold hover:bg-neutral-50 transition-all">
+                <Download size={16} /> Сначала скачать бэкап этого устройства
+              </button>
+              <div className="space-y-2 pt-1">
+                <button onClick={resolveKeepLocal} className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg transition-all">
+                  Оставить данные этого устройства
+                </button>
+                <button onClick={resolveKeepCloud} className="w-full py-3.5 rounded-2xl border-2 border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50 transition-all">
+                  Взять данные из облака
+                </button>
+              </div>
             </div>
           </div>
         </div>

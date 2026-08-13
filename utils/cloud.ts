@@ -107,12 +107,73 @@ export async function cloudLoad(): Promise<CloudLoadResult> {
   }
 }
 
-export async function cloudSave(doc: CloudDoc): Promise<{ error?: string }> {
+/** Reads ONLY the version stamp — light enough to poll every few seconds. */
+export async function cloudGetVersion(): Promise<{ version: number | null; error?: string }> {
+  const c = getClient();
+  if (!c) return { version: null, error: 'облако не настроено' };
+  const { data: sess } = await c.auth.getSession();
+  const userId = sess.session?.user.id;
+  if (!userId) return { version: null, error: 'сессия истекла' };
+  try {
+    const buster = Date.now() % 86400000; // same cache-buster trick as cloudLoad
+    const { data, error } = await c
+      .from('vault')
+      .select('updated_at')
+      .eq('user_id', userId)
+      .gte('updated_at', buster)
+      .maybeSingle();
+    if (error) return { version: null, error: error.message };
+    return { version: data ? Number(data.updated_at) : null };
+  } catch {
+    return { version: null, error: 'нет связи с сервером' };
+  }
+}
+
+export interface CloudSaveResult {
+  error?: string;
+  conflict?: boolean; // another device wrote to the cloud since `expectedVersion`
+}
+
+/**
+ * Writes the vault using optimistic concurrency: the update lands ONLY while
+ * the cloud still holds `expectedVersion`. If another device wrote meanwhile,
+ * the call reports a conflict instead of destroying that data — this is what
+ * stops a long-open stale tab from clobbering fresh work from another device.
+ *
+ * `expectedVersion === null` means "this device has never synced" — allowed
+ * only while the cloud row does not exist yet. `force` bypasses the check and
+ * is used solely for the explicit «Отправить в облако» choice.
+ */
+export async function cloudSave(doc: CloudDoc, expectedVersion: number | null, force = false): Promise<CloudSaveResult> {
   const c = getClient();
   if (!c) return { error: 'Облако не настроено' };
   const { data: sess } = await c.auth.getSession();
   const userId = sess.session?.user.id;
   if (!userId) return { error: 'Нет входа' };
-  const { error } = await c.from('vault').upsert({ user_id: userId, doc: doc.data, updated_at: doc.updatedAt });
-  return error ? { error: error.message } : {};
+  try {
+    if (force) {
+      const { error } = await c.from('vault').upsert({ user_id: userId, doc: doc.data, updated_at: doc.updatedAt });
+      return error ? { error: error.message } : {};
+    }
+
+    if (expectedVersion === null) {
+      const current = await cloudGetVersion();
+      if (current.error) return { error: current.error };
+      if (current.version !== null) return { conflict: true }; // cloud already has data we never saw
+      const { error } = await c.from('vault').insert({ user_id: userId, doc: doc.data, updated_at: doc.updatedAt });
+      return error ? { error: error.message } : {};
+    }
+
+    const { data, error } = await c
+      .from('vault')
+      .update({ doc: doc.data, updated_at: doc.updatedAt })
+      .eq('user_id', userId)
+      .eq('updated_at', expectedVersion)
+      .select('updated_at');
+    if (error) return { error: error.message };
+    if (!data || data.length === 0) return { conflict: true }; // cloud moved on — do not overwrite
+    return {};
+  } catch {
+    return { error: 'нет связи с сервером' };
+  }
 }
