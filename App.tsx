@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   FileSpreadsheet,
   ShieldAlert,
+  History,
   Cloud,
   CloudOff,
   LogOut
@@ -35,6 +36,7 @@ import Incomes from './components/Incomes';
 import Clients from './components/Clients';
 import CloudLoginModal from './components/CloudLoginModal';
 import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder } from './utils/backup';
+import { Snapshot, listSnapshots, saveSnapshot } from './utils/snapshots';
 import { exportToExcel } from './utils/excel';
 import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, cloudGetVersion, CloudDoc } from './utils/cloud';
 
@@ -64,6 +66,8 @@ const App: React.FC = () => {
   // Divergence between this device and the cloud that only the user can resolve.
   const [conflictDoc, setConflictDoc] = useState<CloudDoc | null>(null);
   const [showConflict, setShowConflict] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   // Guards the save effect so it never overwrites stored data with the empty
@@ -192,6 +196,8 @@ const App: React.FC = () => {
   // Applies a cloud document to this device (shared by auto-sync and the
   // manual "Забрать из облака" button).
   const applyCloudDoc = (doc: CloudDoc) => {
+    // Undo net: keep the version we are about to replace.
+    saveSnapshot(dataRef.current, 'до загрузки из облака');
     applyingCloud.current = true; // no echo-push
     skipDirty.current = true;     // arriving cloud data is not a local edit
     setPerfumes(doc.data.perfumes || []);
@@ -450,7 +456,7 @@ const App: React.FC = () => {
           (res.skipped ? `\n⚠ Пропущено повреждённых записей: ${res.skipped}` : '');
         if (window.confirm(`${summary}\n\nТекущая база будет перезаписана (страховочная копия останется в браузере). Продолжить?`)) {
           // Safety net: keep the pre-import state so a bad import is recoverable.
-          localStorage.setItem('sv_backup_before_import', JSON.stringify(dataRef.current));
+          saveSnapshot(dataRef.current, 'до импорта файла');
           setPerfumes(d.perfumes);
           setVials(d.vials);
           setSales(d.sales);
@@ -463,6 +469,29 @@ const App: React.FC = () => {
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const openSnapshots = () => {
+    setSnapshots(listSnapshots());
+    setShowSnapshots(true);
+    setShowMobileMenu(false);
+  };
+
+  // Restores a kept version. The current base is snapshotted first, so this
+  // action is itself undoable.
+  const restoreSnapshot = (snap: Snapshot) => {
+    const when = new Date(snap.at).toLocaleString('ru-RU');
+    if (!window.confirm(`Восстановить версию от ${when}?\n\n${snap.perfumes} ароматов, ${snap.sales} продаж.\n\nТекущая база будет заменена — её копия тоже сохранится.`)) return;
+    saveSnapshot(dataRef.current, 'до восстановления версии');
+    setPerfumes(snap.data.perfumes || []);
+    setVials(snap.data.vials || []);
+    setSales(snap.data.sales || []);
+    setExpenses(snap.data.expenses || []);
+    setIncomes(snap.data.incomes || []);
+    setClientsData(snap.data.clientsData || []);
+    setShowSnapshots(false);
+    // Left marked as a local edit on purpose: it will be uploaded to the cloud
+    // through the usual guarded push.
   };
 
   const copyLink = () => {
@@ -539,6 +568,7 @@ const App: React.FC = () => {
           <button onClick={exportData} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 rounded-xl transition-all"><Download size={16} /> Бэкап</button>
           <button onClick={exportExcel} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 rounded-xl transition-all"><FileSpreadsheet size={16} /> Экспорт в Excel</button>
           <button onClick={() => fileInputRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 rounded-xl transition-all"><Upload size={16} /> Импорт</button>
+          <button onClick={openSnapshots} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800 rounded-xl transition-all"><History size={16} /> Прошлые версии</button>
           <input type="file" ref={fileInputRef} onChange={importData} className="hidden" accept=".json" />
         </div>
       </aside>
@@ -696,6 +726,9 @@ const App: React.FC = () => {
               <button onClick={() => { fileInputRef.current?.click(); setShowMobileMenu(false); }} className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 text-neutral-500">
                 <Upload size={22} /><span className="text-xs font-bold">Импорт</span>
               </button>
+              <button onClick={openSnapshots} className="flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 text-neutral-500">
+                <History size={22} /><span className="text-xs font-bold">Версии</span>
+              </button>
               {isCloudConfigured && (
                 cloudSession ? (
                   <button onClick={() => { setShowCloudMenu(true); setShowMobileMenu(false); }} className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl bg-neutral-50 ${cloudColor}`}>
@@ -736,6 +769,42 @@ const App: React.FC = () => {
               <button onClick={() => { if (window.confirm('Выйти из облака на этом устройстве? Данные останутся, но синхронизация остановится.')) { cloudSignOut(); setShowCloudMenu(false); } }} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-neutral-400 font-bold hover:bg-neutral-50 transition-all">
                 <LogOut size={16} /> Выйти из облака
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Local undo history */}
+      {showSnapshots && (
+        <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowSnapshots(false)}>
+          <div className="bg-white rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-300" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-neutral-100 flex justify-between items-center">
+              <h2 className="text-xl font-bold flex items-center gap-2"><History size={20} className="text-indigo-600" /> Прошлые версии</h2>
+              <button onClick={() => setShowSnapshots(false)} className="p-2 text-neutral-400 hover:bg-neutral-100 rounded-full transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-3 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              <p className="text-xs text-neutral-500">
+                Копии базы, сохранённые на этом устройстве перед заменой данных (загрузка из облака, импорт).
+              </p>
+              {snapshots.length === 0 ? (
+                <div className="py-10 text-center">
+                  <History size={36} className="mx-auto mb-3 opacity-10" />
+                  <p className="text-sm text-neutral-400 italic">Пока нечего восстанавливать</p>
+                </div>
+              ) : (
+                snapshots.map(snap => (
+                  <div key={snap.at} className="p-4 rounded-2xl border border-neutral-200 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-neutral-800">{new Date(snap.at).toLocaleString('ru-RU')}</p>
+                      <p className="text-xs text-neutral-500">{snap.perfumes} ароматов · {snap.sales} продаж</p>
+                      <p className="text-[10px] text-neutral-400 uppercase font-black tracking-wider mt-0.5">{snap.reason}</p>
+                    </div>
+                    <button onClick={() => restoreSnapshot(snap)} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 shrink-0 transition-all">
+                      Вернуть
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
