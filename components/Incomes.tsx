@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, Edit2, X, Check } from 'lucide-react';
 import { Income } from '../types';
+import DecimalInput from './DecimalInput';
 
 interface IncomesProps {
   incomes: Income[];
@@ -95,7 +96,7 @@ const Incomes: React.FC<IncomesProps> = ({ incomes, setIncomes, searchQuery }) =
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
               <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Описание</label><input required placeholder="Откуда доход?" type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-emerald-500 transition-all" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Сумма (₽)</label><input required type="number" value={formData.amount} onChange={e => setFormData({ ...formData, amount: +e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none font-bold text-emerald-600 focus:border-emerald-500" /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Сумма (₽)</label><DecimalInput required value={formData.amount} onChange={v => setFormData({ ...formData, amount: v })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none font-bold text-emerald-600 focus:border-emerald-500" /></div>
                 <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Дата</label><input required type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-emerald-500" /></div>
               </div>
               <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Категория</label><select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-emerald-500 bg-white">{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>

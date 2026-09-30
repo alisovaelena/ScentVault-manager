@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ShoppingCart, Plus, Trash2, X, Check, Edit2, Gift, Phone, PackagePlus, Truck } from 'lucide-react';
 import { Sale, SaleItem, Perfume, Vial, ClientData, OrderStatus, isPerfumeArchived } from '../types';
 import { ORDER_STATUSES, getSaleGiftCount, getSaleItems, getSaleStatus, getSaleSummary, getSaleTotal } from '../utils/sales';
+import DecimalInput from './DecimalInput';
 
 interface SalesProps {
   sales: Sale[];
@@ -466,7 +467,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                         onChange={id => updateItem(item.id, { perfumeId: id })}
                       />
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <input type="number" min={0.1} step={0.1} value={item.volumeMl} onChange={e => updateItem(item.id, { volumeMl: +e.target.value })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none" placeholder="мл" />
+                        <DecimalInput value={item.volumeMl} onChange={v => updateItem(item.id, { volumeMl: v })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none" placeholder="мл" />
                         <select value={item.vialId || ''} onChange={e => updateItem(item.id, { vialId: e.target.value })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none">
                           <option value="">Без флакона</option>
                           {[...vials]
@@ -505,7 +506,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-neutral-400 uppercase ml-1">Доставка, платит клиент (₽)</label>
-                    <input type="number" min={0} value={formData.shippingCost} onChange={e => setFormData({ ...formData, shippingCost: +e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 bg-white font-bold outline-none focus:border-indigo-500" />
+                    <DecimalInput value={formData.shippingCost} onChange={v => setFormData({ ...formData, shippingCost: v })} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 bg-white font-bold outline-none focus:border-indigo-500" />
                   </div>
                 </div>
               </div>
@@ -513,7 +514,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                 <div>
                   <label className="text-[10px] font-black text-emerald-600 uppercase ml-1">Доп. доход / чаевые</label>
-                  <input type="number" min={0} value={formData.extraIncome} onChange={e => setFormData({ ...formData, extraIncome: +e.target.value })} className="w-full px-4 py-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 text-emerald-700 font-bold outline-none" />
+                  <DecimalInput value={formData.extraIncome} onChange={v => setFormData({ ...formData, extraIncome: v })} className="w-full px-4 py-3 rounded-2xl border border-emerald-100 bg-emerald-50/40 text-emerald-700 font-bold outline-none" />
                 </div>
                 <div className="bg-neutral-900 text-white rounded-2xl px-5 py-4">
                   <p className="text-[10px] uppercase font-black text-neutral-400">Итого к оплате</p>

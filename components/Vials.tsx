@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Plus, Minus, Trash2, Edit2, AlertTriangle, Check, X, Calculator, ArrowDownCircle, LayoutGrid, List, ArrowUpDown } from 'lucide-react';
 import { Vial } from '../types';
+import DecimalInput from './DecimalInput';
 
 interface VialsProps {
   vials: Vial[];
@@ -225,17 +226,17 @@ const Vials: React.FC<VialsProps> = ({ vials, setVials, searchQuery }) => {
                   <input required type="text" autoFocus value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-indigo-500 transition-all" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Объем (мл)</label><input required type="number" value={formData.sizeMl} onChange={e => setFormData({...formData, sizeMl: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-indigo-500" /></div>
-                  <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Кол-во (шт)</label><input required type="number" value={formData.batchQuantity} onChange={e => setFormData({...formData, batchQuantity: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-indigo-500" /></div>
+                  <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Объем (мл)</label><DecimalInput required value={formData.sizeMl} onChange={v => setFormData({...formData, sizeMl: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-indigo-500" /></div>
+                  <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Кол-во (шт)</label><DecimalInput required value={formData.batchQuantity} onChange={v => setFormData({...formData, batchQuantity: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:border-indigo-500" /></div>
                 </div>
               </div>
               <div className="bg-neutral-50 p-5 rounded-3xl border border-neutral-100 space-y-4">
-                <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Сумма за всю партию (₽)</label><input required type="number" value={formData.batchTotalCost} onChange={e => setFormData({...formData, batchTotalCost: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:bg-white focus:border-indigo-500" /></div>
+                <div className="space-y-1"><label className="text-xs font-bold text-neutral-400 uppercase ml-1">Сумма за всю партию (₽)</label><DecimalInput required value={formData.batchTotalCost} onChange={v => setFormData({...formData, batchTotalCost: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none focus:bg-white focus:border-indigo-500" /></div>
                 <div className="flex items-center justify-between px-2"><div className="flex items-center gap-2 text-neutral-500 text-xs"><Calculator size={14} /> Себестоимость:</div><span className="text-lg font-bold text-neutral-900">{calculatedUnitCost.toFixed(2)} ₽/шт</span></div>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-indigo-500 uppercase ml-1">Розничная цена шт (₽)</label>
-                <input required type="number" value={formData.retailPrice} onChange={e => setFormData({...formData, retailPrice: +e.target.value})} className="w-full px-4 py-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/30 text-indigo-700 text-xl font-bold outline-none focus:border-indigo-500 transition-all" />
+                <DecimalInput required value={formData.retailPrice} onChange={v => setFormData({...formData, retailPrice: v})} className="w-full px-4 py-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/30 text-indigo-700 text-xl font-bold outline-none focus:border-indigo-500 transition-all" />
               </div>
               <div className="flex gap-4 pt-2 shrink-0">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 font-bold text-neutral-400">Отмена</button>

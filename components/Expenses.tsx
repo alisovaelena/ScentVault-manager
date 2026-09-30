@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, Edit2, ReceiptRussianRuble, X, Check, Search } from 'lucide-react';
 import { Expense } from '../types';
+import DecimalInput from './DecimalInput';
 
 interface ExpensesProps {
   expenses: Expense[];
@@ -88,7 +89,7 @@ const Expenses: React.FC<ExpensesProps> = ({ expenses, setExpenses, searchQuery 
             <div className="p-6 border-b border-neutral-100 shrink-0 flex justify-between items-center"><h2 className="text-xl font-bold">{editingExpense ? 'Редактировать' : 'Новый расход'}</h2><button onClick={() => setIsModalOpen(false)} className="p-2 text-neutral-400 hover:bg-neutral-100 rounded-full transition-colors"><X size={20} /></button></div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <input required placeholder="На что потратили?" type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
-              <input required type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none font-bold text-rose-600" />
+              <DecimalInput required value={formData.amount} onChange={v => setFormData({...formData, amount: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none font-bold text-rose-600" />
               <button type="submit" className="w-full bg-rose-600 text-white py-4 rounded-2xl font-bold shadow-lg hover:bg-rose-700 transition-all">Сохранить</button>
             </form>
           </div>

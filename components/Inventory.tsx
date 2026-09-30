@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit2, Droplets, Check, X, Calculator, LayoutGrid, List, ArrowUpDown, ArchiveRestore } from 'lucide-react';
 import { Perfume, isPerfumeArchived } from '../types';
+import DecimalInput from './DecimalInput';
 
 interface InventoryProps {
   perfumes: Perfume[];
@@ -269,11 +270,11 @@ const Inventory: React.FC<InventoryProps> = ({ perfumes, setPerfumes, searchQuer
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-neutral-400 uppercase ml-1">Объем (мл)</label>
-                    <input required type="number" value={formData.totalVolumeMl} onChange={e => setFormData({...formData, totalVolumeMl: +e.target.value, currentVolumeMl: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
+                    <DecimalInput required value={formData.totalVolumeMl} onChange={v => setFormData({...formData, totalVolumeMl: v, currentVolumeMl: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-neutral-400 uppercase ml-1">Цена закупки (₽)</label>
-                    <input required type="number" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
+                    <DecimalInput required value={formData.purchasePrice} onChange={v => setFormData({...formData, purchasePrice: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
                   </div>
                 </div>
                 <div className="flex items-center justify-between px-2 text-xs">
@@ -284,11 +285,11 @@ const Inventory: React.FC<InventoryProps> = ({ perfumes, setPerfumes, searchQuer
               <div className="space-y-4">
                 <div className="space-y-1 relative">
                   <label className="text-xs font-bold text-indigo-400 uppercase ml-1">Цена за 1 мл (₽)</label>
-                  <input required type="number" value={formData.retailPricePerMl} onChange={e => setFormData({...formData, retailPricePerMl: +e.target.value})} className="w-full px-4 py-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/30 text-indigo-700 text-xl font-bold outline-none focus:border-indigo-500" />
+                  <DecimalInput required value={formData.retailPricePerMl} onChange={v => setFormData({...formData, retailPricePerMl: v})} className="w-full px-4 py-4 rounded-2xl border-2 border-indigo-100 bg-indigo-50/30 text-indigo-700 text-xl font-bold outline-none focus:border-indigo-500" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-neutral-400 uppercase ml-1">Порог уведомления (мл)</label>
-                  <input required type="number" value={formData.lowStockThreshold} onChange={e => setFormData({...formData, lowStockThreshold: +e.target.value})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
+                  <DecimalInput required value={formData.lowStockThreshold} onChange={v => setFormData({...formData, lowStockThreshold: v})} className="w-full px-4 py-3 rounded-2xl border border-neutral-200 outline-none" />
                 </div>
               </div>
               <div className="flex gap-4 pt-4 shrink-0">
