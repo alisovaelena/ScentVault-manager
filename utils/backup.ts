@@ -139,6 +139,37 @@ const SNOOZE = 2 * 24 * 60 * 60 * 1000;
 export const markBackupDone = () => localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
 export const snoozeBackupReminder = () => localStorage.setItem(BACKUP_SNOOZE_KEY, String(Date.now()));
 
+// --- Cloud sync staleness -------------------------------------------------
+// A paused Supabase project (or an expired session) silently stops syncing.
+// Without a visible signal that can go unnoticed for months, so the app warns
+// once a week has passed since the last successful sync.
+
+export const LAST_SYNC_KEY = 'sv_last_sync';
+export const SYNC_SNOOZE_KEY = 'sv_sync_snooze';
+
+export const markSyncDone = () => localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+export const snoozeSyncReminder = () => localStorage.setItem(SYNC_SNOOZE_KEY, String(Date.now()));
+
+/** Timestamp of the last successful sync, or null when the cloud was never used. */
+export function getLastSync(): number | null {
+  const last = Number(localStorage.getItem(LAST_SYNC_KEY) || 0);
+  return last > 0 ? last : null;
+}
+
+/** Whole days since the last successful sync, or null when the cloud was never used. */
+export function daysSinceSync(): number | null {
+  const last = getLastSync();
+  return last === null ? null : Math.floor((Date.now() - last) / (24 * 60 * 60 * 1000));
+}
+
+/** True when the cloud HAS been used before but has not synced for over a week. */
+export function isSyncOverdue(): boolean {
+  const days = daysSinceSync();
+  if (days === null || days < 7) return false;
+  const snoozedAt = Number(localStorage.getItem(SYNC_SNOOZE_KEY) || 0);
+  return Date.now() - snoozedAt >= SNOOZE;
+}
+
 /** True when there is data worth protecting and the last backup is older than a week. */
 export function isBackupOverdue(hasData: boolean): boolean {
   if (!hasData) return false;

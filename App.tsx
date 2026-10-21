@@ -35,7 +35,7 @@ import Expenses from './components/Expenses';
 import Incomes from './components/Incomes';
 import Clients from './components/Clients';
 import CloudLoginModal from './components/CloudLoginModal';
-import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder } from './utils/backup';
+import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder, markSyncDone, getLastSync, daysSinceSync, isSyncOverdue, snoozeSyncReminder } from './utils/backup';
 import { Snapshot, listSnapshots, saveSnapshot } from './utils/snapshots';
 import { exportToExcel } from './utils/excel';
 import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, cloudGetVersion, CloudDoc } from './utils/cloud';
@@ -57,6 +57,8 @@ const App: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showBackupBanner, setShowBackupBanner] = useState(false);
+  const [showSyncBanner, setShowSyncBanner] = useState(false);
+  const [syncDays, setSyncDays] = useState<number | null>(null);
   const [cloudSession, setCloudSession] = useState<Session | null>(null);
   const [cloudState, setCloudState] = useState<CloudState>('idle');
   const [showCloudLogin, setShowCloudLogin] = useState(false);
@@ -107,6 +109,11 @@ const App: React.FC = () => {
       (savedSales && savedSales !== '[]')
     );
     setShowBackupBanner(isBackupOverdue(hasData));
+
+    // Cloud staleness: a paused project or an expired session stops syncing
+    // silently — surface it instead of letting it go unnoticed for months.
+    setLastSyncAt(getLastSync());
+    if (isCloudConfigured) { setShowSyncBanner(isSyncOverdue()); setSyncDays(daysSinceSync()); }
 
     // Migration stamp: a base that existed before sync was added has no
     // timestamp. Mark it as "fresh now" so an older cloud document can never
@@ -182,6 +189,8 @@ const App: React.FC = () => {
       setCloudState('synced');
       setCloudErrorMsg('');
       setLastSyncAt(Date.now());
+      markSyncDone();
+      setShowSyncBanner(false);
       localStorage.setItem('sv_dirty', '0');
       // Remember which cloud version this device now corresponds to. The value
       // is used ONLY as an identifier (equality check), never compared as time,
@@ -211,6 +220,8 @@ const App: React.FC = () => {
     setCloudState('synced');
     setCloudErrorMsg('');
     setLastSyncAt(Date.now());
+    markSyncDone();
+    setShowSyncBanner(false);
   };
 
   // Manual sync: replace THIS device's data with the cloud copy.
@@ -640,6 +651,26 @@ const App: React.FC = () => {
             </button>
           </div>
         </header>
+
+        {showSyncBanner && (
+          <div className="mx-4 md:mx-8 mt-4 p-4 bg-rose-50 border border-rose-200 rounded-3xl flex flex-col sm:flex-row sm:items-center gap-3 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0"><CloudOff size={20} /></div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-rose-800">
+                  Облако не синхронизировалось {syncDays !== null ? `${syncDays} дн.` : 'очень давно'}
+                </p>
+                <p className="text-xs text-rose-700/80">
+                  Данные между компьютером и телефоном сейчас не переносятся. Проверьте вход в облако — и сделайте бэкап на всякий случай.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => (cloudSession ? setShowCloudMenu(true) : setShowCloudLogin(true))} className="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold hover:bg-rose-700 transition-all flex items-center gap-2"><Cloud size={14} /> Проверить облако</button>
+              <button onClick={() => { snoozeSyncReminder(); setShowSyncBanner(false); }} className="px-4 py-2 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-100 transition-all">Позже</button>
+            </div>
+          </div>
+        )}
 
         {showBackupBanner && (
           <div className="mx-4 md:mx-8 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-3xl flex flex-col sm:flex-row sm:items-center gap-3 animate-in slide-in-from-top-2">
