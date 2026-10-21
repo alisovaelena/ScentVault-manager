@@ -237,7 +237,10 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
   const fittingVials = (item: SaleItem) => {
     const need = item.volumeMl > 0 ? item.volumeMl : 0;
     return vials
-      .filter(v => v.sizeMl >= need || v.id === item.vialId)
+      // The already-chosen vial always stays (editing an old order must not
+      // drop it — its stock may read 0 precisely because this order took it).
+      // Everything else has to both fit the volume and be in stock.
+      .filter(v => v.id === item.vialId || (v.sizeMl >= need && v.stockQuantity > 0))
       .sort((a, b) => a.sizeMl - b.sizeMl || a.name.localeCompare(b.name, 'ru'));
   };
 
@@ -501,6 +504,11 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                           </p>
                         );
                       })()}
+                      {fittingVials(item).length === 0 && (
+                        <p className="text-xs font-bold text-amber-600 px-1">
+                          Подходящих флаконов нет в наличии — оформите приход в разделе «Тара»
+                        </p>
+                      )}
                     </div>
                   );
                 })}
