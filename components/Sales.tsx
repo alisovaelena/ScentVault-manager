@@ -230,6 +230,17 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
     }));
   };
 
+  // Only vials that can actually hold the poured volume are offered — a 10 ml
+  // decant never goes into a 5 ml atomizer. The smallest suitable one comes
+  // first, and the already-chosen vial always stays in the list so editing an
+  // old order never silently drops it.
+  const fittingVials = (item: SaleItem) => {
+    const need = item.volumeMl > 0 ? item.volumeMl : 0;
+    return vials
+      .filter(v => v.sizeMl >= need || v.id === item.vialId)
+      .sort((a, b) => a.sizeMl - b.sizeMl || a.name.localeCompare(b.name, 'ru'));
+  };
+
   // A filled line is either perfume+volume, or a vial-only sale (empty atomizer).
   const isFilledItem = (item: SaleItem) =>
     (item.perfumeId && item.volumeMl > 0) || (!item.perfumeId && item.vialId);
@@ -470,9 +481,7 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                         <DecimalInput value={item.volumeMl} onChange={v => updateItem(item.id, { volumeMl: v })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none" placeholder="мл" />
                         <select value={item.vialId || ''} onChange={e => updateItem(item.id, { vialId: e.target.value })} className="px-4 py-3 rounded-2xl border border-neutral-200 bg-white outline-none">
                           <option value="">Без флакона</option>
-                          {[...vials]
-                            .sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.sizeMl - b.sizeMl)
-                            .map(v => <option key={v.id} value={v.id}>{v.name} · {v.sizeMl} мл ({v.stockQuantity} шт)</option>)}
+                          {fittingVials(item).map(v => <option key={v.id} value={v.id}>{v.name} · {v.sizeMl} мл ({v.stockQuantity} шт)</option>)}
                         </select>
                         <button type="button" onClick={() => updateItem(item.id, { isGift: !item.isGift })} className={`px-4 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 border transition-all ${item.isGift ? 'bg-pink-500 border-pink-500 text-white' : 'bg-white border-neutral-200 text-neutral-500'}`}>
                           <Gift size={16} /> Подарок
@@ -482,6 +491,16 @@ const Sales: React.FC<SalesProps> = ({ sales, setSales, perfumes, setPerfumes, v
                         <span className="text-neutral-400">{selectedPerfume ? `${selectedPerfume.retailPricePerMl} ₽/мл` : item.vialId ? 'Только атомайзер, без парфюма' : 'Цена появится после выбора'}</span>
                         <span className={item.isGift ? 'text-pink-500' : 'text-indigo-600'}>{item.isGift ? '0 ₽' : `${item.price.toLocaleString()} ₽`}</span>
                       </div>
+                      {(() => {
+                        // Guard for a volume raised after the vial was chosen.
+                        const chosen = vials.find(v => v.id === item.vialId);
+                        if (!chosen || item.volumeMl <= 0 || chosen.sizeMl >= item.volumeMl) return null;
+                        return (
+                          <p className="text-xs font-bold text-rose-600 px-1">
+                            Флакон {chosen.sizeMl} мл меньше объёма {item.volumeMl} мл — выберите больше
+                          </p>
+                        );
+                      })()}
                     </div>
                   );
                 })}
