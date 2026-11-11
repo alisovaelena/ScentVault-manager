@@ -38,7 +38,7 @@ import CloudLoginModal from './components/CloudLoginModal';
 import { BackupData, validateBackup, isBackupOverdue, markBackupDone, snoozeBackupReminder, markSyncDone, getLastSync, daysSinceSync, isSyncOverdue, snoozeSyncReminder } from './utils/backup';
 import { Snapshot, listSnapshots, saveSnapshot } from './utils/snapshots';
 import { exportToExcel } from './utils/excel';
-import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, cloudGetVersion, CloudDoc } from './utils/cloud';
+import { isCloudConfigured, cloudGetSession, cloudOnAuthChange, cloudSignOut, cloudLoad, cloudSave, cloudGetVersion, cloudPing, CloudDoc } from './utils/cloud';
 
 // Recharts is heavy — load the analytics screen only when it is opened.
 const Stats = React.lazy(() => import('./components/Stats'));
@@ -113,7 +113,13 @@ const App: React.FC = () => {
     // Cloud staleness: a paused project or an expired session stops syncing
     // silently — surface it instead of letting it go unnoticed for months.
     setLastSyncAt(getLastSync());
-    if (isCloudConfigured) { setShowSyncBanner(isSyncOverdue()); setSyncDays(daysSinceSync()); }
+    if (isCloudConfigured) {
+      setShowSyncBanner(isSyncOverdue());
+      setSyncDays(daysSinceSync());
+      // Touch the cloud on every start so a free project is never paused for
+      // inactivity — this does not depend on being signed in.
+      cloudPing();
+    }
 
     // Migration stamp: a base that existed before sync was added has no
     // timestamp. Mark it as "fresh now" so an older cloud document can never

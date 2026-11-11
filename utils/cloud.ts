@@ -107,6 +107,26 @@ export async function cloudLoad(): Promise<CloudLoadResult> {
   }
 }
 
+/**
+ * Keeps a free Supabase project from being paused for inactivity.
+ *
+ * The free tier sleeps a project after about a week without requests, and the
+ * app only talks to the cloud while signed in — so an expired session was
+ * enough to let it fall asleep unnoticed (it happened twice). This fires one
+ * tiny anonymous request on every app start, regardless of login state.
+ * Fire-and-forget: a failure means offline or already paused, and neither is
+ * something the app can act on here.
+ */
+export async function cloudPing(): Promise<void> {
+  const c = getClient();
+  if (!c) return;
+  try {
+    await c.from('vault').select('user_id').gte('updated_at', Date.now() % 86400000).limit(1);
+  } catch {
+    /* ignored on purpose */
+  }
+}
+
 /** Reads ONLY the version stamp — light enough to poll every few seconds. */
 export async function cloudGetVersion(): Promise<{ version: number | null; error?: string }> {
   const c = getClient();
